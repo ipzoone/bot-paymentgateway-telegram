@@ -1,0 +1,10 @@
+{
+  "name": "telegram-paywuz-edgeone-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Telegram bot e-commerce dengan Paywuz untuk Tencent EdgeOne Makers",
+  "engines": {
+    "node": ">=18"
+  }
+}
