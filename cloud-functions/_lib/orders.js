@@ -49,12 +49,15 @@ export async function createOrderAndPayment({
   db,
   user,
   product,
+  paymentMethod,
 }) {
   const currentProduct = await getProduct(db, product.id);
 
   if (!currentProduct || !currentProduct.active) {
     throw new UserError("Produk tidak tersedia.");
   }
+
+  const method = String(paymentMethod || config.paywuzPaymentMethod || "").toUpperCase();
 
   const reusableOrder = await findReusableOrder(
     db,
@@ -63,7 +66,18 @@ export async function createOrderAndPayment({
   );
 
   if (reusableOrder) {
-    return { order: reusableOrder, reused: true };
+    const reusableMethod = String(reusableOrder.paymentMethod || "").toUpperCase();
+
+    if (reusableMethod === method) {
+      return { order: reusableOrder, reused: true };
+    }
+
+    // Metode berbeda: batalkan pesanan lama agar bisa dibuat ulang
+    // dengan metode pembayaran pilihan user.
+    await markOrderStatus(db, reusableOrder.id, "cancelled", ["pending"]).catch(
+      () => {},
+    );
+    await releaseOrderStock(db, reusableOrder.id).catch(() => {});
   }
 
   if (currentProduct.stock !== null && currentProduct.stock <= 0) {
@@ -105,7 +119,7 @@ export async function createOrderAndPayment({
   const payload = {
     orderId,
     amount: currentProduct.price,
-    paymentMethod: config.paywuzPaymentMethod,
+    paymentMethod: method,
     expiryMinutes: config.paywuzExpiryMinutes,
     feeByMerchant: config.paywuzFeeByMerchant,
     metadata: {
@@ -132,7 +146,7 @@ export async function createOrderAndPayment({
       totalPayment:
         transaction?.totalPayment || currentProduct.price,
       paymentMethod:
-        transaction?.paymentMethod || config.paywuzPaymentMethod,
+        transaction?.paymentMethod || method,
       paymentNumber: transaction?.paymentNumber || null,
       paymentUrl: transaction?.paymentUrl || null,
       paywuzId: transaction?.id || null,

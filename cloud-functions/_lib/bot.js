@@ -17,13 +17,17 @@ import {
   createOrderAndPayment,
   sendPaymentMessage,
 } from "./orders.js";
+import { listPaymentMethods } from "./paywuz.js";
 import {
   cancelledPaymentView,
+  BANK_PAYMENT_METHODS,
   catalogView,
   categoriesView,
   helpView,
   mainMenuView,
+  methodFeeLabel,
   ordersView,
+  paymentMethodView,
   paymentView,
   productView,
 } from "./ui.js";
@@ -210,13 +214,35 @@ async function handleCallback({ config, db, tg, query }) {
       }
 
       case "buy": {
+        await safeAnswer(tg, query);
+        return showPaymentMethodsCallback({
+          config,
+          db,
+          tg,
+          query,
+          productId: args.join(":"),
+        });
+      }
+
+      case "pay": {
+        const method = String(args[args.length - 1] || "").toUpperCase();
+        const productId = args.slice(0, -1).join(":");
+
+        if (!method || !productId) {
+          return safeAnswer(tg, query, {
+            text: "Metode pembayaran tidak valid.",
+            showAlert: true,
+          });
+        }
+
         return handleBuy({
           config,
           db,
           tg,
           query,
           user,
-          productId: args.join(":"),
+          productId,
+          method,
         });
       }
 
@@ -410,7 +436,88 @@ async function showOrdersCallback({ config, db, tg, query, userId, page }) {
   return editOrSend(tg, query, view);
 }
 
-async function handleBuy({ config, db, tg, query, user, productId }) {
+async function listBankPaymentMethods(config, product) {
+  let remote = [];
+
+  try {
+    const response = await listPaymentMethods(config);
+    remote = Array.isArray(response?.data) ? response.data : [];
+  } catch (error) {
+    console.error("Gagal memuat metode pembayaran", error.message);
+  }
+
+  const available = [];
+
+  for (const bank of BANK_PAYMENT_METHODS) {
+    const found = remote.find((method) => {
+      const code = String(method?.code || "").toUpperCase();
+      if (!code || code === "VA" || code === "ALL") return false;
+
+      if (code.replace(/VA$/, "") === bank.key) return true;
+
+      const name = String(method?.name || "").toUpperCase();
+      return (
+        String(method?.type || "") === "virtual_account" &&
+        name.includes(bank.key)
+      );
+    });
+
+    if (found) {
+      available.push({
+        code: found.code,
+        label: bank.label,
+        feeLabel: methodFeeLabel(found, product.price),
+      });
+    }
+  }
+
+  if (available.length > 0) return available;
+
+  return BANK_PAYMENT_METHODS.map((bank) => ({
+    code: bank.key === "QRIS" ? "QRIS" : `${bank.key}VA`,
+    label: bank.label,
+  }));
+}
+
+async function showPaymentMethodsCallback({ config, db, tg, query, productId }) {
+  const product = await getProduct(db, productId);
+
+  if (!product || !product.active) {
+    return safeAnswer(tg, query, {
+      text: "Produk tidak tersedia.",
+      showAlert: true,
+    });
+  }
+
+  if (product.stock !== null && product.stock <= 0) {
+    return safeAnswer(tg, query, {
+      text: "Stok produk habis.",
+      showAlert: true,
+    });
+  }
+
+  const methods = await listBankPaymentMethods(config, product);
+
+  if (methods.length === 0) {
+    return safeAnswer(tg, query, {
+      text: "Metode pembayaran belum tersedia. Silakan coba lagi nanti.",
+      showAlert: true,
+    });
+  }
+
+  const view = paymentMethodView(product, methods);
+  return editOrSend(tg, query, view);
+}
+
+async function handleBuy({
+  config,
+  db,
+  tg,
+  query,
+  user,
+  productId,
+  method,
+}) {
   const product = await getProduct(db, productId);
 
   if (!product || !product.active) {
@@ -435,6 +542,7 @@ async function handleBuy({ config, db, tg, query, user, productId }) {
       db,
       user,
       product,
+      paymentMethod: method,
     });
   } catch (error) {
     console.error("Gagal membuat pembayaran", error);

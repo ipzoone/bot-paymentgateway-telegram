@@ -1,10 +1,42 @@
 import {
+  centerPad,
   escapeHtml,
-  formatDateTime,
   formatRupiah,
-  isHttpUrl,
+  formatTime,
+  toUnicodeBold,
   truncate,
 } from "./utils.js";
+
+export const BANK_PAYMENT_METHODS = [
+  { key: "QRIS", label: "📱 QRIS" },
+  { key: "BCA", label: "🏦 BCA" },
+  { key: "BNI", label: "🏦 BNI" },
+  { key: "BRI", label: "🏦 BRI" },
+  { key: "BSI", label: "🏦 BSI" },
+  { key: "MANDIRI", label: "🏦 Mandiri" },
+];
+
+export function methodFeeLabel(method, amount) {
+  const fee = method?.fee;
+  if (!fee || typeof fee !== "object") return null;
+
+  const value = Number(amount) || 0;
+  const code = String(method?.code || "").toUpperCase();
+  const type = String(method?.type || "").toLowerCase();
+
+  // Biaya QRIS berjenjang: < Rp150.000 = 0,7% + Rp290; >= Rp150.000 = 0,95%.
+  if (type === "qris" || code === "QRIS") {
+    if (value >= 150000) {
+      return formatRupiah(Math.ceil((value * 95) / 10000));
+    }
+    return formatRupiah(290 + Math.ceil((value * 70) / 10000));
+  }
+
+  const flat = Number(fee.flatIdr) || 0;
+  const bps = Number(fee.percentBps) || 0;
+  if (flat <= 0 && bps <= 0) return "Gratis";
+  return formatRupiah(flat + Math.ceil((value * bps) / 10000));
+}
 
 export function mainMenuKeyboard() {
   return {
@@ -19,9 +51,9 @@ export function mainMenuKeyboard() {
 }
 
 export function mainMenuView(config) {
-  const storeName = escapeHtml(config.storeName || "Toko");
+  const storeName = toUnicodeBold(escapeHtml(config.storeName || "Toko Digital"));
+  const header = centerPad(storeName);
   const customText = String(config.welcomeText || "").trim();
-  const header = `<b>${storeName}</b>`;
   if (customText) {
     return {
       text: `${header}\n\n${escapeHtml(customText)}`,
@@ -182,63 +214,89 @@ export function productView(product) {
   };
 }
 
+export function paymentMethodView(product, methods) {
+  const amount = Number(product.price) || 0;
+
+  const buttons = methods.map((method) => [
+    {
+      text: method.feeLabel
+        ? `${method.label} • +${method.feeLabel}`
+        : method.label,
+      callback_data: `pay:${product.id}:${method.code}`,
+    },
+  ]);
+
+  buttons.push([
+    { text: "⬅️ Kembali", callback_data: `product:${product.id}` },
+    { text: "🏠 Menu Utama", callback_data: "menu" },
+  ]);
+
+  return {
+    text:
+      `💳 <b>Pilih Metode Pembayaran</b>\n\n` +
+      `Produk: ${escapeHtml(truncate(product.name, 80))}\n` +
+      `Harga: <b>${formatRupiah(amount)}</b>\n\n` +
+      "Silakan pilih metode pembayaran:",
+    keyboard: { inline_keyboard: buttons },
+  };
+}
+
 export function paymentView(order, config) {
   const method = order.paymentMethod || config.paywuzPaymentMethod;
   const productName = escapeHtml(truncate(order.productName, 80));
+  const amount = Number(order.amount) || 0;
+  const total = Number(order.totalPayment || order.amount) || 0;
+  const fee = Math.max(0, total - amount);
+
   const numberLabel =
-    method === "QRIS"
-      ? "Kode QRIS"
-      : method === "VA"
-        ? "Nomor Virtual Account"
-        : "Nomor Pembayaran";
+    method === "QRIS" ? "Kode QRIS" : "Nomor Virtual Account";
 
   const numberLine = order.paymentNumber
     ? `\n${numberLabel}:\n<code>${escapeHtml(order.paymentNumber)}</code>\n`
     : "";
 
-  const expiryLine = order.expiresAt
-    ? `Berlaku sampai: ${formatDateTime(order.expiresAt)}\n`
+  const payBeforeLine = order.expiresAt
+    ? `Bayar sebelum: <b>${formatTime(order.expiresAt)}</b>\n`
     : "";
+
+  const breakdown =
+    `\n<b>Rincian:</b>\n` +
+    `Harga produk: ${formatRupiah(amount)}\n` +
+    `Biaya admin: ${fee > 0 ? formatRupiah(fee) : "Gratis"}\n` +
+    `Total: <b>${formatRupiah(total)}</b>\n`;
 
   const text =
     `🧾 <b>Pembayaran ${escapeHtml(order.id)}</b>\n\n` +
     `Produk: ${productName}\n` +
-    `Total: <b>${formatRupiah(order.totalPayment || order.amount)}</b>\n` +
     `Metode: ${escapeHtml(method)}\n` +
-    expiryLine +
     "Status: ⏳ Menunggu pembayaran\n" +
+    payBeforeLine +
     numberLine +
+    breakdown +
     "\nSetelah membayar, tekan <b>Cek Status Pembayaran</b>.";
 
   const caption =
     `🧾 <b>Pembayaran ${escapeHtml(order.id)}</b>\n\n` +
     `Produk: ${productName}\n` +
-    `Total: <b>${formatRupiah(order.totalPayment || order.amount)}</b>\n` +
     `Metode: ${escapeHtml(method)}\n` +
     "Status: ⏳ Menunggu pembayaran\n\n" +
-    "Scan gambar QRIS di atas, atau buka halaman pembayaran melalui tombol di bawah.";
+    "Scan gambar QRIS di atas untuk membayar.";
 
-  const buttons = [];
-
-  if (order.paymentUrl && isHttpUrl(order.paymentUrl)) {
-    buttons.push([
-      { text: "🌐 Buka Halaman Pembayaran", url: order.paymentUrl },
-    ]);
-  }
-
-  buttons.push([
-    {
-      text: "🔄 Cek Status Pembayaran",
-      callback_data: `check:${order.id}`,
-    },
-  ]);
-  buttons.push([
-    {
-      text: "❌ Batalkan Pesanan",
-      callback_data: `cancel:${order.id}`,
-    },
-  ]);
-  buttons.push([{ text: "🏠 Menu Utama", callback_data: "menu" }]);
+  const buttons = [
+    [
+      {
+        text: "🔄 Cek Status Pembayaran",
+        callback_data: `check:${order.id}`,
+      },
+    ],
+    [
+      {
+        text: "❌ Batalkan Pesanan",
+        callback_data: `cancel:${order.id}`,
+      },
+    ],
+    [{ text: "🏠 Menu Utama", callback_data: "menu" }],
+  ];
 
   return {
     text,
@@ -399,10 +457,10 @@ export function helpView(config) {
       "1. Buka <b>Produk</b>.\n" +
       "2. Pilih produk yang diinginkan.\n" +
       "3. Tekan <b>Beli Sekarang</b>.\n" +
-      "4. Bayar melalui QRIS atau Virtual Account.\n" +
-      "5. Tekan <b>Cek Status Pembayaran</b> setelah membayar.\n\n" +
+      "4. Pilih metode pembayaran (QRIS, BCA, BNI, BRI, BSI, atau Mandiri).\n" +
+      "5. Bayar sebelum batas waktu, lalu tekan <b>Cek Status Pembayaran</b>.\n\n" +
       "<b>Pengiriman otomatis:</b>\n" +
-      "Produk akan dikirim otomatis ke chat ini setelah pembayaran terverifikasi oleh Paywuz. " +
+      "Produk akan dikirim otomatis ke chat ini setelah pembayaran terverifikasi. " +
       "Anda juga dapat memantau pesanan melalui menu <b>Pesanan Saya</b>.\n\n" +
       (config.supportUsername
         ? `Butuh bantuan lain? Hubungi @${escapeHtml(config.supportUsername)}.`

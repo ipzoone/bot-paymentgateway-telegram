@@ -17,6 +17,24 @@ export function formatRupiah(value) {
   return `Rp ${String(number).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
 }
 
+export function formatTime(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  try {
+    const time = new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: "Asia/Jakarta",
+    }).format(date);
+    return `${time} WIB`;
+  } catch {
+    return "-";
+  }
+}
+
 export function formatDateTime(value) {
   if (!value) return "-";
   const date = new Date(value);
@@ -50,6 +68,27 @@ export function isHttpUrl(value) {
   } catch {
     return false;
   }
+}
+
+export function toUnicodeBold(value) {
+  return String(value ?? "").replace(/[A-Za-z0-9]/g, (ch) => {
+    const code = ch.codePointAt(0);
+    if (code >= 48 && code <= 57) {
+      return String.fromCodePoint(0x1d7ec + (code - 48));
+    }
+    if (code >= 65 && code <= 90) {
+      return String.fromCodePoint(0x1d5d4 + (code - 65));
+    }
+    return String.fromCodePoint(0x1d5ee + (code - 97));
+  });
+}
+
+export function centerPad(value, width = 28) {
+  const text = String(value ?? "");
+  const length = [...text].length;
+  if (length >= width) return text;
+  const left = Math.floor((width - length) / 2);
+  return " ".repeat(left) + text;
 }
 
 export function truncate(value, maxLength) {
