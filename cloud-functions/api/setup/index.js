@@ -96,7 +96,7 @@ export async function onRequest(context) {
       await tg
         .setMyCommands([
           { command: "start", description: "Menu utama" },
-          { command: "katalog", description: "Katalog produk" },
+          { command: "katalog", description: "Produk" },
           { command: "pesanan", description: "Pesanan saya" },
           { command: "bantuan", description: "Bantuan" },
         ])

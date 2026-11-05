@@ -155,6 +155,14 @@ export class TelegramApi {
     });
   }
 
+  sendVideo(chatId, video, extra = {}) {
+    return this.call("sendVideo", {
+      chat_id: chatId,
+      video,
+      ...extra,
+    });
+  }
+
   answerCallbackQuery(callbackQueryId, options = {}) {
     return this.call("answerCallbackQuery", {
       callback_query_id: callbackQueryId,

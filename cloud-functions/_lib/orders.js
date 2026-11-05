@@ -271,19 +271,45 @@ export async function fulfilOrder({
 }
 
 async function deliverOrder({ tg, order }) {
-  if (order.deliveryType === "file" && order.deliveryContent) {
+  const caption = deliveryCaption(order);
+  const keyboard = mainMenuKeyboard();
+
+  if (order.deliveryType === "photo" && order.deliveryContent) {
     try {
-      await tg.sendDocument(order.chatId, order.deliveryContent, {
-        caption: deliveryCaption(order),
+      await tg.sendPhoto(order.chatId, order.deliveryContent, {
+        caption,
         parse_mode: "HTML",
-        reply_markup: mainMenuKeyboard(),
+        reply_markup: keyboard,
       });
       return;
     } catch (error) {
-      console.error(
-        "Gagal mengirim file produk, fallback ke pesan teks",
-        error.message,
-      );
+      console.error("Gagal mengirim foto produk, fallback ke teks", error.message);
+    }
+  }
+
+  if (order.deliveryType === "video" && order.deliveryContent) {
+    try {
+      await tg.sendVideo(order.chatId, order.deliveryContent, {
+        caption,
+        parse_mode: "HTML",
+        reply_markup: keyboard,
+      });
+      return;
+    } catch (error) {
+      console.error("Gagal mengirim video produk, fallback ke teks", error.message);
+    }
+  }
+
+  if ((order.deliveryType === "file" || order.deliveryType === "document") && order.deliveryContent) {
+    try {
+      await tg.sendDocument(order.chatId, order.deliveryContent, {
+        caption,
+        parse_mode: "HTML",
+        reply_markup: keyboard,
+      });
+      return;
+    } catch (error) {
+      console.error("Gagal mengirim dokumen produk, fallback ke teks", error.message);
     }
   }
 

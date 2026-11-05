@@ -1,12 +1,15 @@
 import { TelegramApi } from "./telegram.js";
 import {
   countUserOrders,
+  deleteUserOrders,
   expireStaleOrders,
   getOrder,
   getProduct,
+  listCategories,
   listProducts,
   listUserOrders,
   upsertUser,
+  getStoreSettings,
 } from "./store.js";
 import {
   cancelOrder,
@@ -17,6 +20,7 @@ import {
 import {
   cancelledPaymentView,
   catalogView,
+  categoriesView,
   helpView,
   mainMenuView,
   ordersView,
@@ -30,6 +34,20 @@ const ORDERS_PAGE_SIZE = 5;
 
 export async function handleUpdate({ config, db, update }) {
   const tg = new TelegramApi(config.telegramToken);
+
+  // Nama toko diambil dari pengaturan toko (dapat diubah lewat panel admin),
+  // bukan hanya dari environment STORE_NAME.
+  try {
+    const settings = await getStoreSettings(db);
+    if (settings?.storeName) {
+      config = { ...config, storeName: settings.storeName };
+    }
+    if (settings?.welcomeText !== undefined) {
+      config = { ...config, welcomeText: settings.welcomeText };
+    }
+  } catch (error) {
+    console.error("Gagal membaca pengaturan toko", error.message);
+  }
 
   if (update.message) {
     return handleMessage({ config, db, tg, message: update.message });
@@ -84,12 +102,11 @@ async function handleMessage({ config, db, tg, message }) {
   }
 
   if (command === "/katalog" || command === "/produk") {
-    return showCatalogMessage({
+    return showCategoriesMessage({
       config,
       db,
       tg,
       chatId: user.chatId,
-      page: 1,
     });
   }
 
@@ -163,10 +180,22 @@ async function handleCallback({ config, db, tg, query }) {
         return editOrSend(tg, query, view);
       }
 
-      case "catalog": {
+      case "catalog": // alias lama, arahkan ke daftar kategori
+      case "categories": {
         await safeAnswer(tg, query);
-        const page = parsePositiveInt(args[0], 1);
-        return showCatalogCallback({ config, db, tg, query, page });
+        return showCategoriesCallback({ config, db, tg, query });
+      }
+
+      case "cat": {
+        await safeAnswer(tg, query);
+        const categoryId = String(args[0] || "");
+        const page = parsePositiveInt(args[1], 1);
+        if (!categoryId) return showCategoriesCallback({ config, db, tg, query });
+        return showCategoryProductsCallback({ config, db, tg, query, categoryId, page });
+      }
+
+      case "clear_orders": {
+        return handleClearOrders({ config, db, tg, query, userId: user.telegramId });
       }
 
       case "product": {
@@ -251,16 +280,57 @@ async function handleCallback({ config, db, tg, query }) {
   }
 }
 
-async function showCatalogMessage({ config, db, tg, chatId, page }) {
-  const products = await listProducts(db);
-  const view = catalogView(products, page, CATALOG_PAGE_SIZE);
+async function showCategoriesMessage({ config, db, tg, chatId }) {
+  const categories = await listCategories(db);
+  const view = categoriesView(categories);
   return sendView(tg, chatId, view);
 }
 
-async function showCatalogCallback({ config, db, tg, query, page }) {
-  const products = await listProducts(db);
-  const view = catalogView(products, page, CATALOG_PAGE_SIZE);
+async function showCategoriesCallback({ config, db, tg, query }) {
+  const categories = await listCategories(db);
+  const view = categoriesView(categories);
   return editOrSend(tg, query, view);
+}
+
+async function showCategoryProductsCallback({ config, db, tg, query, categoryId, page }) {
+  const [categories, products] = await Promise.all([listCategories(db), listProducts(db)]);
+  const category = categories.find((item) => item.id === categoryId);
+
+  if (!category) {
+    const view = categoriesView(categories);
+    return editOrSend(tg, query, view, "Kategori tidak ditemukan.");
+  }
+
+  const filtered = products
+    .filter((product) => product.categoryId === categoryId)
+    .map((product) => ({ ...product, categoryName: category.name }));
+
+  const view = catalogView(filtered, page, CATALOG_PAGE_SIZE, category);
+  return editOrSend(tg, query, view);
+}
+
+async function handleClearOrders({ config, db, tg, query, userId }) {
+  try {
+    const count = await deleteUserOrders(db, userId);
+    await safeAnswer(tg, query, { text: "Riwayat pesanan berhasil dihapus." });
+
+    const view = ordersView([], 1, 1, 0);
+    // Tambahkan objek kategori agar tombol navigasi tetap valid
+    return editOrSend(tg, query, {
+      ...view,
+      text:
+        `🗑 <b>Riwayat Dihapus</b>
+
+` +
+        `${count} pesanan berhasil dihapus.
+
+` +
+        `Anda belum memiliki pesanan. Silakan buka menu Produk untuk mulai berbelanja.`,
+    });
+  } catch (error) {
+    console.error("Gagal menghapus riwayat pesanan", error);
+    return safeAnswer(tg, query, { text: "Gagal menghapus riwayat.", showAlert: true });
+  }
 }
 
 async function showProductMessage({ config, db, tg, chatId, productId }) {
@@ -271,7 +341,8 @@ async function showProductMessage({ config, db, tg, chatId, productId }) {
     return sendView(tg, chatId, view, "Produk tidak ditemukan.");
   }
 
-  const view = productView(product);
+  const categoryName = await getCategoryName(db, product.categoryId);
+  const view = productView({ ...product, categoryName });
   return sendView(tg, chatId, view);
 }
 
@@ -283,8 +354,19 @@ async function showProductCallback({ config, db, tg, query, productId }) {
     return editOrSend(tg, query, view);
   }
 
-  const view = productView(product);
+  const categoryName = await getCategoryName(db, product.categoryId);
+  const view = productView({ ...product, categoryName });
   return editOrSend(tg, query, view);
+}
+
+async function getCategoryName(db, categoryId) {
+  if (!categoryId) return null;
+  try {
+    const categories = await listCategories(db);
+    return categories.find((item) => item.id === categoryId)?.name || null;
+  } catch {
+    return null;
+  }
 }
 
 async function showOrdersMessage({

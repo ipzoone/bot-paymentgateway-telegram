@@ -28,6 +28,9 @@ export function mapProduct(row) {
     price: Number(row.price),
     deliveryType: row.delivery_type || "text",
     deliveryContent: row.delivery_content || "",
+    fileId: row.file_id || null,
+    fileType: row.file_type || null,
+    categoryId: row.category_id || null,
     stock:
       row.stock === null || row.stock === undefined ? null : Number(row.stock),
     active: Number(row.active) === 1,
@@ -148,6 +151,14 @@ export async function countUserOrders(database, userId) {
     [userId],
   );
   return Number(rows[0]?.total || 0);
+}
+
+export async function deleteUserOrders(database, userId) {
+  const result = await database.execute(
+    `DELETE FROM orders WHERE user_id = ?`,
+    [userId],
+  );
+  return result.affectedRows;
 }
 
 export async function listUserOrders(database, userId, limit = 5, offset = 0) {
@@ -404,4 +415,104 @@ export async function recordPaymentEvent(
      ON CONFLICT(id) DO NOTHING`,
     [id, orderId || null, event || null, payload || null, nowIso()],
   );
+}
+
+export function mapCategory(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    icon: row.icon || "",
+    sortOrder: Number(row.sort_order || 0),
+    active: Number(row.active) === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function listCategories(database) {
+  const rows = await database.query(
+    `SELECT * FROM categories WHERE active = 1 ORDER BY sort_order ASC, name ASC`,
+  );
+  return rows.map(mapCategory);
+}
+
+export async function getCategory(database, categoryId) {
+  const rows = await database.query("SELECT * FROM categories WHERE id = ?", [
+    categoryId,
+  ]);
+  return mapCategory(rows[0]);
+}
+
+export async function upsertCategory(database, category) {
+  const now = nowIso();
+  await database.execute(
+    `INSERT INTO categories
+      (id, name, icon, sort_order, active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      icon = excluded.icon,
+      sort_order = excluded.sort_order,
+      active = excluded.active,
+      updated_at = excluded.updated_at`,
+    [
+      category.id,
+      category.name,
+      category.icon || null,
+      category.sortOrder ?? 0,
+      category.active === false ? 0 : 1,
+      now,
+      now,
+    ],
+  );
+  return getCategory(database, category.id);
+}
+
+export async function deleteCategory(database, categoryId) {
+  await database.execute(
+    `DELETE FROM categories WHERE id = ?`,
+    [categoryId],
+  );
+}
+
+export async function getStoreSettings(database) {
+  const rows = await database.query(
+    "SELECT * FROM store_settings WHERE id = 1",
+  );
+  if (rows.length === 0) {
+    const now = nowIso();
+    await database.execute(
+      `INSERT INTO store_settings (id, store_name, telegram_channel_id, updated_at)
+       VALUES (1, 'Toko Saya', NULL, ?)`,
+      [now],
+    );
+    return { id: 1, storeName: "Toko Saya", telegramChannelId: null, welcomeText: "" };
+  }
+  const row = rows[0];
+  return {
+    id: row.id,
+    storeName: row.store_name || "Toko Saya",
+    telegramChannelId: row.telegram_channel_id || null,
+    welcomeText: row.welcome_text || "",
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function updateStoreSettings(database, settings) {
+  const now = nowIso();
+  await database.execute(
+    `INSERT INTO store_settings (id, store_name, telegram_channel_id, updated_at)
+     VALUES (1, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+      store_name = excluded.store_name,
+      telegram_channel_id = excluded.telegram_channel_id,
+      updated_at = excluded.updated_at`,
+    [
+      settings.storeName || "Toko Saya",
+      settings.telegramChannelId || null,
+      now,
+    ],
+  );
+  return getStoreSettings(database);
 }

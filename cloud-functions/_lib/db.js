@@ -64,6 +64,21 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_orders_user ON orders (user_id, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status)`,
   `CREATE INDEX IF NOT EXISTS idx_orders_expiry ON orders (status, expires_at)`,
+  `CREATE TABLE IF NOT EXISTS categories (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    icon TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS store_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    store_name TEXT NOT NULL DEFAULT 'Toko Saya',
+    telegram_channel_id TEXT,
+    updated_at TEXT NOT NULL
+  )`,
 ];
 
 const databaseCache = new Map();
@@ -204,6 +219,10 @@ export async function migrate(database) {
   }
 
   await ensureColumn(database, "orders", "total_payment", "INTEGER");
+  await ensureColumn(database, "store_settings", "welcome_text", "TEXT");
+  await ensureColumn(database, "products", "file_id", "TEXT");
+  await ensureColumn(database, "products", "file_type", "TEXT");
+  await ensureColumn(database, "products", "category_id", "TEXT");
 
   return SCHEMA.length;
 }

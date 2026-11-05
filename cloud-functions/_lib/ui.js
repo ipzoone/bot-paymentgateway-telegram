@@ -9,7 +9,7 @@ import {
 export function mainMenuKeyboard() {
   return {
     inline_keyboard: [
-      [{ text: "🛒 Katalog Produk", callback_data: "catalog:1" }],
+      [{ text: "🛒 Produk", callback_data: "categories:1" }],
       [
         { text: "📦 Pesanan Saya", callback_data: "orders:1" },
         { text: "❓ Bantuan", callback_data: "help" },
@@ -19,28 +19,75 @@ export function mainMenuKeyboard() {
 }
 
 export function mainMenuView(config) {
+  const storeName = escapeHtml(config.storeName || "Toko");
+  const customText = String(config.welcomeText || "").trim();
+  const header = `<b>${storeName}</b>`;
+  if (customText) {
+    return {
+      text: `${header}\n\n${escapeHtml(customText)}`,
+      keyboard: mainMenuKeyboard(),
+    };
+  }
   return {
     text:
-      `👋 <b>Selamat datang di ${escapeHtml(config.storeName)}</b>\n\n` +
+      `${header}\n\n` +
       "Saya dapat membantu Anda membeli produk digital secara otomatis.\n" +
-      "Silakan pilih menu di bawah ini tanpa perlu mengetik perintah.",
+      "Silakan pilih menu di bawah ini.",
     keyboard: mainMenuKeyboard(),
   };
 }
+export function categoriesView(categories) {
+  if (!categories || categories.length === 0) {
+    return {
+      text:
+        "🛒 <b>Produk</b>\n\n" +
+        "Belum ada kategori/produk yang tersedia saat ini. Silakan cek kembali nanti.",
+      keyboard: {
+        inline_keyboard: [[{ text: "🏠 Menu Utama", callback_data: "menu" }]],
+      },
+    };
+  }
 
-export function catalogView(products, page = 1, pageSize = 8) {
+  const buttons = categories.map((category) => [
+    {
+      text: `${category.icon ? `${category.icon} ` : ""}${truncate(category.name, 45)}`,
+      callback_data: `cat:${category.id}:1`,
+    },
+  ]);
+
+  buttons.push([{ text: "🏠 Menu Utama", callback_data: "menu" }]);
+
+  return {
+    text:
+      "🛒 <b>Produk</b>\n\n" +
+      "Silakan pilih kategori produk:",
+    keyboard: { inline_keyboard: buttons },
+  };
+}
+
+export function catalogView(products, page = 1, pageSize = 8, category = null) {
   const total = products.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.min(Math.max(1, page), totalPages);
   const start = (currentPage - 1) * pageSize;
   const visibleProducts = products.slice(start, start + pageSize);
 
+  const backCallback = category ? `cat:${category.id}:1` : "categories:1";
+  const emptyText = category
+    ? `Belum ada produk di kategori ${escapeHtml(category.name)}.`
+    : "Belum ada produk yang tersedia saat ini. Silakan cek kembali nanti.";
+
   if (total === 0) {
     return {
       text:
-        "🛒 <b>Katalog Produk</b>\n\n" +
-        "Belum ada produk yang tersedia saat ini. Silakan cek kembali nanti.",
-      keyboard: mainMenuKeyboard(),
+        `🛒 <b>${category ? escapeHtml(category.name) : "Produk"}</b>\n\n` +
+        emptyText,
+      keyboard: {
+        inline_keyboard: [
+          [{ text: "⬅️ Kembali ke Kategori", callback_data: "categories:1" }],
+          [{ text: "🏠 Menu Utama", callback_data: "menu" }],
+        ],
+      },
     };
   }
 
@@ -60,7 +107,7 @@ export function catalogView(products, page = 1, pageSize = 8) {
     if (currentPage > 1) {
       navigation.push({
         text: "⬅️",
-        callback_data: `catalog:${currentPage - 1}`,
+        callback_data: category ? `cat:${category.id}:${currentPage - 1}` : `categories:${currentPage - 1}`,
       });
     }
 
@@ -72,19 +119,22 @@ export function catalogView(products, page = 1, pageSize = 8) {
     if (currentPage < totalPages) {
       navigation.push({
         text: "➡️",
-        callback_data: `catalog:${currentPage + 1}`,
+        callback_data: category ? `cat:${category.id}:${currentPage + 1}` : `categories:${currentPage + 1}`,
       });
     }
 
     buttons.push(navigation);
   }
 
+  buttons.push([{ text: "⬅️ Kembali ke Kategori", callback_data: "categories:1" }]);
   buttons.push([{ text: "🏠 Menu Utama", callback_data: "menu" }]);
+
+  const title = category ? escapeHtml(category.name) : "Produk";
 
   return {
     text:
-      "🛒 <b>Katalog Produk</b>\n\n" +
-      "Pilih produk digital yang ingin Anda beli.\n" +
+      `🛒 <b>${title}</b>\n\n` +
+      "Pilih produk yang ingin Anda beli.\n" +
       `Halaman ${currentPage} dari ${totalPages} • ${total} produk`,
     keyboard: { inline_keyboard: buttons },
   };
@@ -112,7 +162,7 @@ export function productView(product) {
   }
 
   buttons.push([
-    { text: "⬅️ Kembali ke Katalog", callback_data: "catalog:1" },
+    { text: "⬅️ Kembali ke Kategori", callback_data: "categories:1" },
     { text: "🏠 Menu Utama", callback_data: "menu" },
   ]);
 
@@ -123,7 +173,7 @@ export function productView(product) {
   return {
     text:
       `🛍 <b>${escapeHtml(product.name)}</b>\n\n` +
-      `Kategori: ${escapeHtml(product.category)}\n` +
+      `Kategori: ${escapeHtml(product.categoryName || product.category || "Umum")}\n` +
       `Harga: <b>${formatRupiah(product.price)}</b>\n` +
       `Stok: ${stockLabel}\n` +
       `Status: ${available ? "✅ Tersedia" : "❌ Tidak tersedia"}\n\n` +
@@ -258,10 +308,10 @@ export function ordersView(orders, page, totalPages, total) {
     return {
       text:
         "📦 <b>Pesanan Saya</b>\n\n" +
-        "Anda belum memiliki pesanan. Silakan buka katalog untuk mulai berbelanja.",
+        "Anda belum memiliki pesanan. Silakan buka menu Produk untuk mulai berbelanja.",
       keyboard: {
         inline_keyboard: [
-          [{ text: "🛒 Katalog Produk", callback_data: "catalog:1" }],
+          [{ text: "🛒 Produk", callback_data: "categories:1" }],
           [{ text: "🏠 Menu Utama", callback_data: "menu" }],
         ],
       },
@@ -308,8 +358,9 @@ export function ordersView(orders, page, totalPages, total) {
     buttons.push(navigation);
   }
 
+  buttons.push([{ text: "🗑 Hapus Riwayat", callback_data: "clear_orders" }]);
   buttons.push([
-    { text: "🛒 Katalog", callback_data: "catalog:1" },
+    { text: "🛒 Produk", callback_data: "categories:1" },
     { text: "🏠 Menu Utama", callback_data: "menu" },
   ]);
 
@@ -325,7 +376,7 @@ export function ordersView(orders, page, totalPages, total) {
 export function helpView(config) {
   const buttons = [
     [
-      { text: "🛒 Katalog Produk", callback_data: "catalog:1" },
+      { text: "🛒 Produk", callback_data: "categories:1" },
       { text: "📦 Pesanan Saya", callback_data: "orders:1" },
     ],
   ];
@@ -345,7 +396,7 @@ export function helpView(config) {
     text:
       "❓ <b>Bantuan</b>\n\n" +
       "<b>Cara membeli produk:</b>\n" +
-      "1. Buka <b>Katalog Produk</b>.\n" +
+      "1. Buka <b>Produk</b>.\n" +
       "2. Pilih produk yang diinginkan.\n" +
       "3. Tekan <b>Beli Sekarang</b>.\n" +
       "4. Bayar melalui QRIS atau Virtual Account.\n" +
