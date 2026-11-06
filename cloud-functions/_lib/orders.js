@@ -335,8 +335,8 @@ async function deliverOrder({ tg, order }) {
         inline_keyboard: [
           [{ text: "🔗 Buka Produk", url: order.deliveryContent }],
           [
-            { text: "📦 Pesanan Saya", callback_data: "orders:1" },
-            { text: "🏠 Menu Utama", callback_data: "menu" },
+            { text: "📦 Pesanan", callback_data: "orders:1" },
+            { text: "🏠 Menu", callback_data: "menu" },
           ],
         ],
       },
@@ -462,8 +462,11 @@ export async function failOrder({ db, tg, order, cancelled = false }) {
     await tg.sendMessage(
       order.chatId,
       cancelled
-        ? `🚫 <b>Transaksi dibatalkan</b>\n\nPesanan <code>${order.id}</code> telah dibatalkan.`
-        : `❌ <b>Pembayaran gagal</b>\n\nPesanan <code>${order.id}</code> gagal atau kedaluwarsa. Silakan buat pesanan baru.`,
+        ? `🚫 <b>TRANSAKSI DIBATALKAN</b>\n\n` +
+          `<blockquote>🧾 <code>${order.id}</code>\n⚫ Status · Dibatalkan</blockquote>`
+        : `❌ <b>PEMBAYARAN GAGAL</b>\n\n` +
+          `<blockquote>🧾 <code>${order.id}</code>\n🔴 Status · Gagal / kedaluwarsa</blockquote>\n\n` +
+          "💡 <i>Silakan buat pesanan baru.</i>",
       {
         parse_mode: "HTML",
         reply_markup: mainMenuKeyboard(),

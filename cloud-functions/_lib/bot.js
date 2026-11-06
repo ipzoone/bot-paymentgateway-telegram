@@ -77,7 +77,8 @@ async function handleMessage({ config, db, tg, message }) {
     await tg
       .sendMessage(
         chat.id,
-        "Bot ini hanya dapat digunakan melalui chat pribadi. Silakan buka chat pribadi dengan bot.",
+        "🔒 <b>Chat pribadi diperlukan</b>\nBot ini hanya dapat digunakan melalui chat pribadi.",
+        { parse_mode: "HTML" },
       )
       .catch(() => {});
     return;
@@ -149,8 +150,8 @@ async function handleMessage({ config, db, tg, message }) {
     user.chatId,
     view,
     rawText.startsWith("/")
-      ? "Perintah tidak dikenali. Silakan gunakan tombol berikut:"
-      : "Silakan gunakan tombol berikut:",
+      ? "⚠️ <b>Perintah tidak dikenali.</b>\nSilakan gunakan tombol berikut:"
+      : "👇 <i>Silakan gunakan tombol berikut.</i>",
   );
 }
 
@@ -345,13 +346,10 @@ async function handleClearOrders({ config, db, tg, query, userId }) {
     return editOrSend(tg, query, {
       ...view,
       text:
-        `🗑 <b>Riwayat Dihapus</b>
-
-` +
-        `${count} pesanan berhasil dihapus.
-
-` +
-        `Anda belum memiliki pesanan. Silakan buka menu Produk untuk mulai berbelanja.`,
+        `🗑 <b>RIWAYAT DIHAPUS</b>\n\n` +
+        `<blockquote>✅ ${count} pesanan berhasil dihapus.\n` +
+        "📭 Anda belum memiliki pesanan.</blockquote>\n\n" +
+        "👇 <i>Silakan buka Katalog Produk untuk mulai berbelanja.</i>",
     });
   } catch (error) {
     console.error("Gagal menghapus riwayat pesanan", error);
